@@ -12,10 +12,9 @@ class DoubleSynonymsDataset(Dataset):
 
     """ Create a datset for the boylm model """
 
-    def __init__(self, csv_file, mode):
+    def __init__(self, csv_file):
         self.csv_file = pd.read_csv(csv_file)
         self.tokenizer = AutoTokenizer.from_pretrained(config_lm.model)
-        self.mode = 1 if mode == "source" else 0
         self.csv_file = self.new_masked_columns(self.csv_file)
         self.tokenized_text = self.tokenzing(self.csv_file, self.mode)
 
@@ -34,13 +33,13 @@ class DoubleSynonymsDataset(Dataset):
         return " ".join(sentence)
 
     def new_masked_columns(self, file):
-        file["target1_masked"] = file["target1"].apply(self.mask_target)
-        file["target2_masked"] = file["target2"].apply(self.mask_target)
+        file["source1_masked"] = file["source_1"].apply(self.mask_target)
+        file["source2_masked"] = file["source_2"].apply(self.mask_target)
 
         file["text_masked"] = file.apply(
             lambda x: [
-                [x["source"] + " " + x["rela"] + " " + x[f"target1_masked"]],
-                [x["source"] + " " + x["rela"] + " " + x[f"target2_masked"]]
+                [x["source1_masked"] + " " + x["rela"] + " " + x[f"target"]],
+                [x["source2_masked"] + " " + x["rela"] + " " + x[f"target"]]
             ]
                , axis=1
         )
@@ -59,30 +58,30 @@ class DoubleSynonymsDataset(Dataset):
         text_masked = list(zip(*file["text_masked"].tolist()))
         text_masked_1, text_masked_2 = text_masked[0], text_masked[1]
 
-        text_target_1_unmasked = self.tokenizer(
+        online_network_labels = self.tokenizer(
             text_unmasked_1, padding=True, truncation=True, return_tensors="pt"
         )
-        text_target_2_unmasked = self.tokenizer(
+        target_network_labels = self.tokenizer(
             text_unmasked_2, padding=True, truncation=True, return_tensors="pt"
         )
 
-        text_target_1_masked = self.tokenizer(
+        online_network_inputs = self.tokenizer(
             text_masked_1, padding=True, truncation=True, return_tensors="pt"
         )
-        text_target_2_masked = self.tokenizer(
+        target_network_inputs = self.tokenizer(
             text_masked_2, padding=True, truncation=True, return_tensors="pt"
         )
-        if mode == 1:
-            return list(
+
+        online_network_labels['input_ids'][online_network_inputs['input_ids'] != self.tokenizer.mask_token_id] = -100
+
+        target_network_labels['input_ids'][target_network_inputs['input_ids'] != self.tokenizer.mask_token_id] = -100
+        
+        batch_view1 = list(zip(online_network_inputs, online_network_labels))
+        batch_view2 = list(zip(target_network_inputs, target_network_labels))
+        return list(
                 zip(
-                    text_target_1_unmasked,
-                    text_target_1_masked                )
-            )
-        else:
-            return list(
-                zip(
-                    text_target_2_unmasked,
-                    text_target_2_masked
-                )
-            )
+                    batch_view1,
+                    batch_view2
+                    ))
+        
 

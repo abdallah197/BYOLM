@@ -8,13 +8,7 @@ import torch.nn.functional as F
 from config_lm import *
 
 
-def boyl_loss(x, y):
-    """
-    minimize the loss function 
-    """
-    x = F.normalize(x, dim=-1, p=2)
-    y = F.normalize(y, dim=-1, p=2)
-    return 2 - 2 * (x * y).sum(dim=-1)
+
 
 class MLPHead(nn.Module):
     def __init__(self, in_channels, mlp_hidden_size, projection_size):
@@ -33,8 +27,8 @@ class MLPHead(nn.Module):
 """
 add mlp_hidden_size, projection_size to config
 """
-class AlbertBOYL(AlbertPreTrainedModel):
-    def __init__(self, config, mlp_hidden_size, projection_size):
+class BYOLLM(AlbertPreTrainedModel):
+    def __init__(self, config, mlp_hidden_size, projection_size, boyl_loss):
         super().__init__(config)
 
         self.albert = AlbertModel(config)
@@ -43,6 +37,8 @@ class AlbertBOYL(AlbertPreTrainedModel):
 
         self.init_weights()
         self.tie_weights()
+
+        self.boyl_loss = boyl_loss
 
     def tie_weights(self):
         self._tie_or_clone_weights(self.predictions.decoder, self.albert.embeddings.word_embeddings)
@@ -82,7 +78,7 @@ class AlbertBOYL(AlbertPreTrainedModel):
 
         outputs = (prediction_scores,) + outputs[2:]  # Add hidden states and attention if they are here
         if labels is not None:
-            boyl_lm_loss = boyl_loss(prediction_scores.view(-1, self.config.vocab_size), labels.view(-1))
+            boyl_lm_loss = self.boyl_loss(prediction_scores.view(-1, self.config.vocab_size), labels.view(-1))
             outputs = (boyl_lm_loss,) + outputs
 
         return outputs

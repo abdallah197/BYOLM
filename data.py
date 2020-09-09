@@ -24,22 +24,23 @@ class DoubleSynonymsDataset(Dataset):
     def __getitem__(self, idx):
         return self.tokenized_text[idx]
 
-    def mask_target(self, sentence):
-        sentence = sentence.split()
+    def mask_target(self, file):
+        sentence = file["target"].split()
         length = len(sentence)
-        masked_index = random.randrange(0, length, 1)
-        sentence[masked_index] = self.tokenizer.mask_token
-
-        return " ".join(sentence)
+        sentence[file["masked_index"]] = self.tokenizer.mask_token
+    
+        return  " ".join(sentence)
 
     def new_masked_columns(self, file):
-        file["source1_masked"] = file["source_1"].apply(self.mask_target)
-        file["source2_masked"] = file["source_2"].apply(self.mask_target)
+        file["masked_index"] = file.apply(lambda x: random.randrange(0, len(x["target"].split()), 1), axis = 1)
+        file["target"] = file.apply(lambda x: self.mask_target(x), axis =1)
+        file["masked_index_1"] = file.apply(lambda x: x["masked_index"] + len(x["source_1"].split()), axis =1)
+        file["masked_index_2"] = file.apply(lambda x: x["masked_index"] + len(x["source_2"].split()), axis =1)
 
         file["text_masked"] = file.apply(
             lambda x: [
-                [x["source1_masked"] + " " + x["rela"] + " " + x[f"target"]],
-                [x["source2_masked"] + " " + x["rela"] + " " + x[f"target"]]
+                [x["source_1"] + " " + x["rela"] + " " + x["target"]],
+                [x["source_2"] + " " + x["rela"] + " " + x["target"]]
             ]
                , axis=1
         )
@@ -72,12 +73,12 @@ class DoubleSynonymsDataset(Dataset):
             text_masked_2, padding=True, truncation=True, return_tensors="pt"
         )
 
-        online_network_labels['input_ids'][online_network_inputs['input_ids'] != self.tokenizer.mask_token_id] = -100
+        online_network_labels['labels'][online_network_inputs['input_ids'] != self.tokenizer.mask_token_id] = -100
 
-        target_network_labels['input_ids'][target_network_inputs['input_ids'] != self.tokenizer.mask_token_id] = -100
+        target_network_labels['labels'][target_network_inputs['input_ids'] != self.tokenizer.mask_token_id] = -100
         
-        batch_view1 = list(zip(online_network_inputs, online_network_labels))
-        batch_view2 = list(zip(target_network_inputs, target_network_labels))
+        batch_view1 = list(zip(online_network_inputs, online_network_labels, file["masked_index_1"].tolist()))
+        batch_view2 = list(zip(target_network_inputs, target_network_labels, file["masked_index_2"].tolist()))
         return list(
                 zip(
                     batch_view1,

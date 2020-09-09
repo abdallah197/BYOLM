@@ -3,42 +3,27 @@ from transformers.modeling_albert import AlbertMLMHead
 
 from torch import nn
 import torch.nn.functional as F
-
+from torch.nn import CrossEntropyLoss
 
 from config_lm import *
 
 
-
-
-class MLPHead(nn.Module):
-    def __init__(self, in_channels, mlp_hidden_size, projection_size):
-        super(MLPHead, self).__init__()
-        
-        self.net = nn.Sequential(
-            nn.Linear(in_channels, mlp_hidden_size),
-            nn.BatchNorm1d(mlp_hidden_size),
-            nn.ReLU(inplace=True),
-            nn.Linear(mlp_hidden_size, projection_size)
-        )
-
-    def forward(self, x):
-        return self.net(x)
-
-"""
-add mlp_hidden_size, projection_size to config
-"""
 class BYOLLM(AlbertPreTrainedModel):
-    def __init__(self, config, mlp_hidden_size, projection_size, boyl_loss):
+    def __init__(self, config, mlp_hidden_size, projection_size):
         super().__init__(config)
 
         self.albert = AlbertModel(config)
         self.predictions = AlbertMLMHead(config)
-        self.mlp =  MLPHead(config.hidden_size, mlp_hidden_size, projection_size)
-
         self.init_weights()
         self.tie_weights()
 
-        self.boyl_loss = boyl_loss
+        self.mlp = nn.Sequential(
+            nn.Linear(config.hidden_size, mlp_hidden_size),
+            nn.BatchNorm1d(mlp_hidden_size),
+            nn.ReLU(inplace=True),
+            nn.Linear(mlp_hidden_size, projection_size)
+        )
+        
 
     def tie_weights(self):
         self._tie_or_clone_weights(self.predictions.decoder, self.albert.embeddings.word_embeddings)
@@ -73,14 +58,16 @@ class BYOLLM(AlbertPreTrainedModel):
         sequence_outputs = outputs[0]
 
         prediction_scores = self.predictions(sequence_outputs)
-        # make sure about the prediction_scores dim
+        """
+        I should pass only the masked token prediction  embedding to the MLP and then get it out to the loss
+        """
         prediction_scores = self.mlp(prediction_scores)
 
         outputs = (prediction_scores,) + outputs[2:]  # Add hidden states and attention if they are here
         if labels is not None:
-            boyl_lm_loss = self.boyl_loss(prediction_scores.view(-1, self.config.vocab_size), labels.view(-1))
-            outputs = (boyl_lm_loss,) + outputs
-
+            loss_fct = CrossEntropyLoss()
+            masked_lm_loss = loss_fct(prediction_scores.view(-1, self.config.vocab_size), labels.view(-1))
+        outputs  = ((masked_lm_loss,) + outputs)
         return outputs
 
 

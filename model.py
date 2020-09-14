@@ -5,7 +5,7 @@ from torch import nn
 import torch.nn.functional as F
 from torch.nn import CrossEntropyLoss
 
-import config_lm  
+import config_lm
 
 
 class BYOLLM(AlbertPreTrainedModel):
@@ -21,12 +21,13 @@ class BYOLLM(AlbertPreTrainedModel):
             nn.Linear(config.hidden_size, mlp_hidden_size),
             nn.BatchNorm1d(mlp_hidden_size),
             nn.ReLU(inplace=True),
-            nn.Linear(mlp_hidden_size, projection_size)
+            nn.Linear(mlp_hidden_size, projection_size),
         )
-        
 
     def tie_weights(self):
-        self._tie_or_clone_weights(self.predictions.decoder, self.albert.embeddings.word_embeddings)
+        self._tie_or_clone_weights(
+            self.predictions.decoder, self.albert.embeddings.word_embeddings
+        )
 
     def get_output_embeddings(self):
         return self.predictions.decoder
@@ -63,11 +64,15 @@ class BYOLLM(AlbertPreTrainedModel):
         """
         prediction_scores = self.mlp(prediction_scores)
 
-        outputs = (prediction_scores,) + outputs[2:]  # Add hidden states and attention if they are here
+        outputs = (prediction_scores,) + outputs[
+            2:
+        ]  # Add hidden states and attention if they are here
         if labels is not None:
             loss_fct = CrossEntropyLoss()
-            masked_lm_loss = loss_fct(prediction_scores.view(-1, self.config.vocab_size), labels.view(-1))
-        outputs  = ((masked_lm_loss,) + outputs)
+            masked_lm_loss = loss_fct(
+                prediction_scores.view(-1, self.config.vocab_size), labels.view(-1)
+            )
+        outputs = (masked_lm_loss,) + outputs
         return outputs
 
 

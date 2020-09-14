@@ -13,7 +13,7 @@ from torch import Tensor
 import collections
 
 
-import config_lm  
+import config_lm
 
 
 class DoubleSynonymsDataset(Dataset):
@@ -37,46 +37,49 @@ class DoubleSynonymsDataset(Dataset):
         length = len(sentence)
         sentence[file["masked_index"]] = tokenizer.mask_token
 
-        return  " ".join(sentence)
+        return " ".join(sentence)
 
     def new_masked_columns(self, file):
-        file["masked_index"] = file.apply(lambda x: random.randrange(0, len(x["target"].split()), 1), axis = 1)
-        file["target"] = file.apply(lambda x: self.mask_target(x), axis =1)
-        file["masked_index_1"] = file.apply(lambda x: x["masked_index"] + len(x["source_1"].split()), axis =1)
-        file["masked_index_2"] = file.apply(lambda x: x["masked_index"] + len(x["source_2"].split()), axis =1)
+        file["masked_index"] = file.apply(
+            lambda x: random.randrange(0, len(x["target"].split()), 1), axis=1
+        )
+        file["target"] = file.apply(lambda x: self.mask_target(x), axis=1)
+        file["masked_index_1"] = file.apply(
+            lambda x: x["masked_index"] + len(x["source_1"].split()), axis=1
+        )
+        file["masked_index_2"] = file.apply(
+            lambda x: x["masked_index"] + len(x["source_2"].split()), axis=1
+        )
 
         file["text_masked"] = file.apply(
             lambda x: [
                 [x["source_1"] + " " + x["rela"] + " " + x["target"]],
-                [x["source_2"] + " " + x["rela"] + " " + x["target"]]
-            ]
-               , axis=1
+                [x["source_2"] + " " + x["rela"] + " " + x["target"]],
+            ],
+            axis=1,
         )
-
 
         return file
 
     def flatten(self, lis):
         return reduce(operator.concat, lis)
 
-
-
     def filtering_ids(self, tokens):
         masked_indexes = collections.defaultdict(int)
-        for i, ids in enumerate(tokens['input_ids']):
+        for i, ids in enumerate(tokens["input_ids"]):
             try:
                 masked_indexes[i] = ids.tolist().index(103)
             except:
                 continue
         consider = masked_indexes.keys()
-        mask = [0]*tokens["input_ids"].shape[0]
+        mask = [0] * tokens["input_ids"].shape[0]
 
         for i in masked_indexes:
             mask[i] = 1
         mask = torch.nonzero(torch.tensor(mask))
-        tokens['input_ids'] = tokens['input_ids'][mask].squeeze()
-        tokens['token_type_ids'] = tokens['token_type_ids'][mask].squeeze()
-        tokens['attention_mask'] = tokens['attention_mask'][mask].squeeze()
+        tokens["input_ids"] = tokens["input_ids"][mask].squeeze()
+        tokens["token_type_ids"] = tokens["token_type_ids"][mask].squeeze()
+        tokens["attention_mask"] = tokens["attention_mask"][mask].squeeze()
         return tokens, list(masked_indexes.values())
 
     def tokenzing(self, file):
@@ -88,30 +91,56 @@ class DoubleSynonymsDataset(Dataset):
 
         text_unmasked = list(zip(*file["text"].tolist()))
 
-        text_unmasked_1, text_unmasked_2 = self.flatten(list(text_unmasked[0])), self.flatten(list(text_unmasked[1]))
+        text_unmasked_1, text_unmasked_2 = (
+            self.flatten(list(text_unmasked[0])),
+            self.flatten(list(text_unmasked[1])),
+        )
 
         text_masked = list(zip(*file["text_masked"].tolist()))
-        text_masked_1, text_masked_2 = self.flatten(list(text_masked[0])), self.flatten(list(text_masked[1]))
+        text_masked_1, text_masked_2 = (
+            self.flatten(list(text_masked[0])),
+            self.flatten(list(text_masked[1])),
+        )
 
         online_network_labels = self.tokenizer(
-            text_unmasked_1, padding=True, truncation=True, return_tensors="pt", max_length=config_lm.max_lenght
+            text_unmasked_1,
+            padding=True,
+            truncation=True,
+            return_tensors="pt",
+            max_length=config_lm.max_lenght,
         )
         target_network_labels = self.tokenizer(
-            text_unmasked_2, padding=True, truncation=True, return_tensors="pt", max_length=config_lm.max_lenght
+            text_unmasked_2,
+            padding=True,
+            truncation=True,
+            return_tensors="pt",
+            max_length=config_lm.max_lenght,
         )
 
         online_network_inputs = self.tokenizer(
-            text_masked_1, padding=True, truncation=True, return_tensors="pt", max_length=config_lm.max_lenght
+            text_masked_1,
+            padding=True,
+            truncation=True,
+            return_tensors="pt",
+            max_length=config_lm.max_lenght,
         )
         target_network_inputs = self.tokenizer(
-            text_masked_2, padding=True, truncation=True, return_tensors="pt", max_length=config_lm.max_lenght
+            text_masked_2,
+            padding=True,
+            truncation=True,
+            return_tensors="pt",
+            max_length=config_lm.max_lenght,
         )
 
-        online_network_labels['input_ids'][online_network_inputs['input_ids'] != self.tokenizer.mask_token_id] = -100
+        online_network_labels["input_ids"][
+            online_network_inputs["input_ids"] != self.tokenizer.mask_token_id
+        ] = -100
 
-        target_network_labels['input_ids'][target_network_inputs['input_ids'] != self.tokenizer.mask_token_id] = -100
+        target_network_labels["input_ids"][
+            target_network_inputs["input_ids"] != self.tokenizer.mask_token_id
+        ] = -100
 
-        #filtering the tensors to get tensors that have masks along with the masked index as well
+        # filtering the tensors to get tensors that have masks along with the masked index as well
 
         online_network_inputs, masks_o = self.filtering_ids(online_network_inputs)
         target_network_inputs, masks_t = self.filtering_ids(target_network_inputs)
@@ -119,5 +148,4 @@ class DoubleSynonymsDataset(Dataset):
         batch_view1 = (online_network_inputs, online_network_labels, masks_o)
         batch_view2 = (target_network_inputs, target_network_labels, masks_t)
 
-        return  (batch_view1, batch_view2)
-
+        return (batch_view1, batch_view2)

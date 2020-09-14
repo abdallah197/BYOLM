@@ -17,6 +17,7 @@ from transformers import get_linear_schedule_with_warmup
 from data import DoubleSynonymsDataset
 from model import BYOLLM
 
+import config_lm
 
 class ByolLM:
     """

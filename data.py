@@ -1,4 +1,5 @@
 import random
+import time
 
 from torch.utils.data import Dataset, Dataset, Sampler
 from transformers import AutoTokenizer
@@ -11,7 +12,7 @@ from functools import reduce
 import operator
 from torch import Tensor
 import collections
-
+import torch
 
 import config_lm
 
@@ -21,8 +22,8 @@ class DoubleSynonymsDataset(Dataset):
     """ Create a datset for the boylm model """
 
     def __init__(self, csv_file):
-        self.csv_file = pd.read_csv(csv_file)
-        self.tokenizer = tokenizer
+        self.csv_file = pd.read_csv(csv_file, nrows = 1000)
+        self.tokenizer = AutoTokenizer.from_pretrained(config_lm.models["bert"])
         self.csv_file = self.new_masked_columns(self.csv_file)
         self.tokenized_text = self.tokenzing(self.csv_file)
 
@@ -30,12 +31,12 @@ class DoubleSynonymsDataset(Dataset):
         return len(self.tokenized_text)
 
     def __getitem__(self, idx):
-        return self.tokenized_text[idx]
+        return (self.tokenized_text[0][idx], self.tokenized_text[1][idx])
 
     def mask_target(self, file):
         sentence = file["target"].split()
         length = len(sentence)
-        sentence[file["masked_index"]] = tokenizer.mask_token
+        sentence[file["masked_index"]] = self.tokenizer.mask_token
 
         return " ".join(sentence)
 
@@ -85,7 +86,6 @@ class DoubleSynonymsDataset(Dataset):
     def tokenzing(self, file):
         """
         We need labels1 for the unmasked text 1 since the model will do the computation on the labels 1
-
         """
         file.text = file.text.apply(lambda s: list(ast.literal_eval(s)))
 
@@ -129,7 +129,7 @@ class DoubleSynonymsDataset(Dataset):
             padding=True,
             truncation=True,
             return_tensors="pt",
-            max_length=config_lm.max_lenght,
+            max_length=config_lm.config_lm.max_lenght,
         )
 
         online_network_labels["input_ids"][
@@ -145,7 +145,15 @@ class DoubleSynonymsDataset(Dataset):
         online_network_inputs, masks_o = self.filtering_ids(online_network_inputs)
         target_network_inputs, masks_t = self.filtering_ids(target_network_inputs)
 
-        batch_view1 = (online_network_inputs, online_network_labels, masks_o)
-        batch_view2 = (target_network_inputs, target_network_labels, masks_t)
+        batch_view1 = list(zip(online_network_inputs["input_ids"], online_network_labels["input_ids"], masks_o))
+        batch_view2 = list(zip(target_network_inputs["input_ids"], target_network_labels["input_ids"], masks_t))
 
         return (batch_view1, batch_view2)
+
+start = time.time()
+print("start time: ", start)
+
+f = "/GW/Health-Corpus/work/UMLS/data/data.csv"
+batches = DoubleSynonymsDataset(f)
+end = time.time()
+print("end time: ", end - start)

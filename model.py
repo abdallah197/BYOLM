@@ -72,7 +72,7 @@ class BYOLLM(AlbertPreTrainedModel):
             masked_lm_loss = loss_fct(
                 prediction_scores.view(-1, self.config.vocab_size), labels.view(-1)
             )
-        outputs = (masked_lm_loss,) + outputs
+            outputs = (masked_lm_loss,) + outputs
         return outputs
 
 

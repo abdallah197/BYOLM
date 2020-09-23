@@ -129,7 +129,7 @@ class DoubleSynonymsDataset(Dataset):
             padding=True,
             truncation=True,
             return_tensors="pt",
-            max_length=config_lm.config_lm.max_lenght,
+            max_length= config_lm.max_lenght,
         )
 
         online_network_labels["input_ids"][

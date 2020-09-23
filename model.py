@@ -9,19 +9,25 @@ import config_lm
 
 
 class BYOLLM(AlbertPreTrainedModel):
-    def __init__(self, config, mlp_hidden_size, projection_size):
+    """
+    a Pytorch nn Module that incorporate BYOL approach for transformer based models.
+    the model output masked tokens embeddings after being passed through an MLP layer.
+    plus the logits for the model predictions and the hidden states.
+    """
+    def __init__(self, config):
         super().__init__(config)
 
         self.albert = AlbertModel(config)
         self.predictions = AlbertMLMHead(config)
         self.init_weights()
         self.tie_weights()
+        self.config = config
 
         self.mlp = nn.Sequential(
-            nn.Linear(config.hidden_size, mlp_hidden_size),
-            nn.BatchNorm1d(mlp_hidden_size),
+            nn.Linear(config.hidden_size, 4096),
+            nn.BatchNorm1d(4096),
             nn.ReLU(inplace=True),
-            nn.Linear(mlp_hidden_size, projection_size),
+            nn.Linear(4096, config.hidden_size),
         )
 
     def tie_weights(self):
@@ -43,6 +49,8 @@ class BYOLLM(AlbertPreTrainedModel):
         labels=None,
         output_attentions=None,
         output_hidden_states=None,
+        masked_index = None,
+        return_dict = None,
         **kwargs
     ):
 
@@ -59,25 +67,16 @@ class BYOLLM(AlbertPreTrainedModel):
         sequence_outputs = outputs[0]
 
         prediction_scores = self.predictions(sequence_outputs)
+
+
+        # Add hidden states and attention if they are here
+        output = (prediction_scores,) + outputs[2:]
+        # pass the masked tokens embeddings through the MLP layer
         """
-        I should pass only the masked token prediction  embedding to the MLP and then get it out to the loss
+        1: to access the hidden states
+        0: to access the embedding output layer (batch_size, seq_length, hidden_size:768)
+        masked_embeddings should be (batch_size, 768)
         """
-        prediction_scores = self.mlp(prediction_scores)
-
-        outputs = (prediction_scores,) + outputs[
-            2:
-        ]  # Add hidden states and attention if they are here
-        if labels is not None:
-            loss_fct = CrossEntropyLoss()
-            masked_lm_loss = loss_fct(
-                prediction_scores.view(-1, self.config.vocab_size), labels.view(-1)
-            )
-            outputs = (masked_lm_loss,) + outputs
-        return outputs
-
-
-"""
-TODO:
-1. implement any thing class by class and try in a notebook.
-2. initiliaze in a notebook with one example.
-"""
+        masked_embeddings = output[1][0][:,masked_index,:]
+        masked_embeddings = self.mlp(masked_embeddings)
+        return (masked_embeddings,) +  output[:]    

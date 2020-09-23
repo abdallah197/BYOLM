@@ -8,7 +8,7 @@ from torch.nn import CrossEntropyLoss
 import config_lm
 
 
-class BYOLLM(AlbertPreTrainedModel):
+class ByolLanguegeModel(AlbertPreTrainedModel):
     """
     a Pytorch nn Module that incorporate BYOL approach for transformer based models.
     the model output masked tokens embeddings after being passed through an MLP layer.

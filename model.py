@@ -51,6 +51,7 @@ class ByolLanguegeModel(AlbertPreTrainedModel):
         output_hidden_states=None,
         masked_index = None,
         return_dict = None,
+        mlp = False
         **kwargs
     ):
 
@@ -77,6 +78,9 @@ class ByolLanguegeModel(AlbertPreTrainedModel):
         0: to access the embedding output layer (batch_size, seq_length, hidden_size:768)
         masked_embeddings should be (batch_size, 768)
         """
-        masked_embeddings = output[1][0][:,masked_index,:]
-        masked_embeddings = self.mlp(masked_embeddings)
-        return (masked_embeddings,) +  output[:]    
+        if mlp:
+            masked_embeddings = output[1][0][:,masked_index,:]
+            masked_embeddings = self.mlp(masked_embeddings)
+            return (masked_embeddings,) +  output[:]    
+        return output
+

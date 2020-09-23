@@ -81,14 +81,13 @@ class ByolLM:
 
             for (batch_view_1, batch_view_2) in train_loader:
                 """
-                batch_view_1:
-                1. online_network_inputs (online network input ids with a mask
-                token in the target)
-                2. online_network_labels (same as the online network, includes
-                the original token of the masked token
-                with all other tokens masked as -100, this vector to beu used when
-                using cross entropy loss (supervised learning))
-                3. masks_o: list of the masked indexes inside the input_ids list
+                batch_view:
+                0. network_inputs["input_ids"]
+                1. network_inputs["token_type_ids"]
+                2. network_inputs["attention_mask"]
+                3. network_labels["input_ids"], 
+                4. masks indexes
+
                 """
 
                 batch_view_1 = batch_view_1.to(self.device)
@@ -106,31 +105,46 @@ class ByolLM:
 
             print("End of epoch {}".format(epoch_counter))
 
-    def update(self, batch_view_1, batch_view_2):
+    def update(self, batch_view_1, batch_view_2, config):
         """
         change the prediction in all models 
         batch_view_1 include (online_network_inputs, online_network_labels)
         online_network = model(labels = online_network_labels['input_ids'])
         """
-        online_network_inputs, online_network_labels, masks_o = batch_view_1
-        target_network_inputs, target_network_labels, masks_t = batch_view_1
 
         # compute query feature
         predictions_from_view_1 = self.online_network(
-            input_ids=online_network_inputs["input_ids"],
-            attention_mask=online_network_inputs["attention_mask"],
-            token_type_ids=online_network_inputs["token_type_ids"],
-        )
-        predictions_from_view_2 = self.online_network(batch_view_2)
+                                            input_ids = batch_view_1[0],
+                                            token_type_ids = batch_view_1[1]
+                                            attention_mask = batch_view_1[2],
+                                            masked_index = batch_view_1[-1],
+                                            output_hidden_states=True, 
+                                            mlp= True)
+        
+        predictions_from_view_2 = self.online_network(
+                                            input_ids = batch_view_2[0],
+                                            token_type_ids = batch_view_2[1]
+                                            attention_mask = batch_view_2[2],
+                                            masked_index = batch_view_2[-1],
+                                            output_hidden_states=True, 
+                                            mlp= True)
 
         # compute key features
         with torch.no_grad():
-            targets_to_view_2 = self.target_network(batch_view_1)
-            targets_to_view_1 = self.target_network(batch_view_2)
+            targets_to_view_2 = self.target_network(
+                                            input_ids = batch_view_1[0],
+                                            token_type_ids = batch_view_1[1]
+                                            attention_mask = batch_view_1[2],
+                                            masked_index = batch_view_1[-1],
+                                            output_hidden_states=True)
+            
+            targets_to_view_1 = self.target_network(
+                                            input_ids = batch_view_2[0],
+                                            token_type_ids = batch_view_2[1]
+                                            attention_mask = batch_view_2[2],
+                                            masked_index = masks_t,
+                                            output_hidden_states=True)
 
         loss = self.boyl_loss(predictions_from_view_1, targets_to_view_1)
         loss += self.boyl_loss(predictions_from_view_2, targets_to_view_2)
         return loss.mean()
-
-        # save checkpoints
-        # self.save_model(os.path.join(modeupdate)

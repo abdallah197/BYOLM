@@ -16,22 +16,24 @@ import torch
 
 import config_lm
 
-
 class DoubleSynonymsDataset(Dataset):
 
     """ Create a datset for the boylm model """
 
-    def __init__(self, csv_file):
-        self.csv_file = pd.read_csv(csv_file, nrows = 1000)
+    def __init__(self, csv_file, dataset):
+        self.dataset = dataset
+        self.csv_file = pd.read_csv(csv_file, nrows=1000)
         self.tokenizer = AutoTokenizer.from_pretrained(config_lm.models["bert"])
         self.csv_file = self.new_masked_columns(self.csv_file)
-        self.tokenized_text = self.tokenzing(self.csv_file)
+        self.tokenized_text = self.tokenzing(self.csv_file, self.dataset)
 
     def __len__(self):
         return len(self.tokenized_text)
 
     def __getitem__(self, idx):
-        return (self.tokenized_text[0][idx], self.tokenized_text[1][idx])
+
+        batch = self.tokenized_text
+        return batch[idx]
 
     def mask_target(self, file):
         sentence = file["target"].split()
@@ -65,7 +67,7 @@ class DoubleSynonymsDataset(Dataset):
     def flatten(self, lis):
         return reduce(operator.concat, lis)
 
-    def filtering_ids(self, tokens):
+    def filtering_ids(self, tokens, msk = None):
         masked_indexes = collections.defaultdict(int)
         for i, ids in enumerate(tokens["input_ids"]):
             try:
@@ -73,17 +75,20 @@ class DoubleSynonymsDataset(Dataset):
             except:
                 continue
         consider = masked_indexes.keys()
-        mask = [0] * tokens["input_ids"].shape[0]
-
-        for i in masked_indexes:
-            mask[i] = 1
-        mask = torch.nonzero(torch.tensor(mask))
+        # to deduct the same exaxmples from both datasets
+        if torch.is_tensor(msk):
+            mask = msk
+        else:
+            mask = [0] * tokens["input_ids"].shape[0]
+            for i in masked_indexes:
+                mask[i] = 1
+            mask = torch.nonzero(torch.tensor(mask))
         tokens["input_ids"] = tokens["input_ids"][mask].squeeze()
         tokens["token_type_ids"] = tokens["token_type_ids"][mask].squeeze()
         tokens["attention_mask"] = tokens["attention_mask"][mask].squeeze()
-        return tokens, list(masked_indexes.values())
+        return tokens, list(masked_indexes.values()), mask
 
-    def tokenzing(self, file):
+    def tokenzing(self, file, dataset):
         """
         We need labels1 for the unmasked text 1 since the model will do the computation on the labels 1
         """
@@ -101,54 +106,78 @@ class DoubleSynonymsDataset(Dataset):
             self.flatten(list(text_masked[0])),
             self.flatten(list(text_masked[1])),
         )
-
-        online_network_labels = self.tokenizer(
-            text_unmasked_1,
-            padding=True,
-            truncation=True,
-            return_tensors="pt",
-            max_length=config_lm.max_lenght,
-        )
-        target_network_labels = self.tokenizer(
-            text_unmasked_2,
-            padding=True,
-            truncation=True,
-            return_tensors="pt",
-            max_length=config_lm.max_lenght,
-        )
-
         online_network_inputs = self.tokenizer(
-            text_masked_1,
-            padding=True,
-            truncation=True,
-            return_tensors="pt",
-            max_length=config_lm.max_lenght,
-        )
+                text_masked_1,
+                padding=True,
+                truncation=True,
+                return_tensors="pt",
+                max_length=config_lm.max_lenght,
+            )
+        online_network_inputs , masks_o, include_exmp = self.filtering_ids(online_network_inputs)
+        
         target_network_inputs = self.tokenizer(
-            text_masked_2,
-            padding=True,
-            truncation=True,
-            return_tensors="pt",
-            max_length= config_lm.max_lenght,
-        )
+                text_masked_2,
+                padding=True,
+                truncation=True,
+                return_tensors="pt",
+                max_length=config_lm.max_lenght,
+            )
+        target_network_inputs, masks_t, include_exmp = self.filtering_ids(target_network_inputs, include_exmp)
 
-        online_network_labels["input_ids"][
-            online_network_inputs["input_ids"] != self.tokenizer.mask_token_id
-        ] = -100
+        if dataset == "online":
+            online_network_labels = self.tokenizer(
+                text_unmasked_1,
+                padding=True,
+                truncation=True,
+                return_tensors="pt",
+                max_length=config_lm.max_lenght,
+            )
+            
+            online_network_labels ,_ , _ = self.filtering_ids(online_network_labels, include_exmp)
+            online_network_labels["input_ids"][
+                online_network_inputs["input_ids"] != self.tokenizer.mask_token_id
+            ] = -100
+            
+            # TODO: switch onlines back to target_network_inputs
+            
 
-        target_network_labels["input_ids"][
-            target_network_inputs["input_ids"] != self.tokenizer.mask_token_id
-        ] = -100
+            batch_view = list(
+                zip(
+                    online_network_inputs["input_ids"],
+                    online_network_inputs["token_type_ids"],
+                    online_network_inputs["attention_mask"],
+                    online_network_labels["input_ids"],
+                    masks_o,
+                )
+            )
 
         # filtering the tensors to get tensors that have masks along with the masked index as well
 
-        online_network_inputs, masks_o = self.filtering_ids(online_network_inputs)
-        target_network_inputs, masks_t = self.filtering_ids(target_network_inputs)
+        else:
+            target_network_labels = self.tokenizer(
+                text_unmasked_2,
+                padding=True,
+                truncation=True,
+                return_tensors="pt",
+                max_length=config_lm.max_lenght,
+            )
+            target_network_labels ,_ , _ = self.filtering_ids(target_network_labels, include_exmp)
+            target_network_labels["input_ids"][
+                target_network_inputs["input_ids"] != self.tokenizer.mask_token_id
+            ] = -100
+            # TODO: switxh targets back to target_network_inputs
+            batch_view = list(
+                zip(
+                    target_network_inputs["input_ids"],
+                    target_network_inputs["token_type_ids"],
+                    target_network_inputs["attention_mask"],
+                    target_network_labels["input_ids"],
+                    masks_t,
+                )
+            )
 
-        batch_view1 = list(zip(online_network_inputs["input_ids"], online_network_labels["input_ids"], masks_o))
-        batch_view2 = list(zip(target_network_inputs["input_ids"], target_network_labels["input_ids"], masks_t))
+        return batch_view
 
-        return (batch_view1, batch_view2)
 
 start = time.time()
 print("start time: ", start)

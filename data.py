@@ -16,25 +16,14 @@ import torch
 
 import config_lm
 
-class DoubleSynonymsDataset(Dataset):
-
-    """ Create a datset for the boylm model """
-
-    def __init__(self, csv_file, dataset):
-        self.dataset = dataset
-        self.csv_file = pd.read_csv(csv_file, nrows=1000)
+class Preprocesser:
+    
+    def __init__(self, df):
+        self.df = df
         self.tokenizer = AutoTokenizer.from_pretrained(config_lm.models["bert"])
-        self.csv_file = self.new_masked_columns(self.csv_file)
-        self.tokenized_text = self.tokenzing(self.csv_file, self.dataset)
+        self.df = self.new_masked_columns(self.df)
 
-    def __len__(self):
-        return len(self.tokenized_text)
-
-    def __getitem__(self, idx):
-
-        batch = self.tokenized_text
-        return batch[idx]
-
+    
     def mask_target(self, file):
         sentence = file["target"].split()
         length = len(sentence)
@@ -63,6 +52,24 @@ class DoubleSynonymsDataset(Dataset):
         )
 
         return file
+    
+class DoubleSynonymsDataset(Dataset):
+
+    """ Create a datset for the boylm model """
+
+    def __init__(self, csv_file, dataset):
+        self.dataset = dataset
+        self.csv_file = csv_file
+        self.tokenizer = AutoTokenizer.from_pretrained(config_lm.models["bert"])
+        self.tokenized_text = self.tokenzing(self.csv_file, self.dataset)
+
+    def __len__(self):
+        return len(self.tokenized_text)
+
+    def __getitem__(self, idx):
+
+        batch = self.tokenized_text
+        return batch[idx]
 
     def flatten(self, lis):
         return reduce(operator.concat, lis)
@@ -111,8 +118,10 @@ class DoubleSynonymsDataset(Dataset):
                 padding=True,
                 truncation=True,
                 return_tensors="pt",
-                max_length=config_lm.max_lenght,
+                max_length=config_lm.max_length,
             )
+        
+        # filtering the tensors to get tensors that have masks along with the masked index as well
         online_network_inputs , masks_o, include_exmp = self.filtering_ids(online_network_inputs)
         
         target_network_inputs = self.tokenizer(
@@ -120,7 +129,7 @@ class DoubleSynonymsDataset(Dataset):
                 padding=True,
                 truncation=True,
                 return_tensors="pt",
-                max_length=config_lm.max_lenght,
+                max_length=config_lm.max_length,
             )
         target_network_inputs, masks_t, include_exmp = self.filtering_ids(target_network_inputs, include_exmp)
 
@@ -130,7 +139,7 @@ class DoubleSynonymsDataset(Dataset):
                 padding=True,
                 truncation=True,
                 return_tensors="pt",
-                max_length=config_lm.max_lenght,
+                max_length=config_lm.max_length,
             )
             
             online_network_labels ,_ , _ = self.filtering_ids(online_network_labels, include_exmp)
@@ -151,7 +160,6 @@ class DoubleSynonymsDataset(Dataset):
                 )
             )
 
-        # filtering the tensors to get tensors that have masks along with the masked index as well
 
         else:
             target_network_labels = self.tokenizer(
@@ -159,7 +167,7 @@ class DoubleSynonymsDataset(Dataset):
                 padding=True,
                 truncation=True,
                 return_tensors="pt",
-                max_length=config_lm.max_lenght,
+                max_length=config_lm.max_length,
             )
             target_network_labels ,_ , _ = self.filtering_ids(target_network_labels, include_exmp)
             target_network_labels["input_ids"][
@@ -178,11 +186,20 @@ class DoubleSynonymsDataset(Dataset):
 
         return batch_view
 
+class ConcatDataset(ConcatDataset):
+    def __init__(self, *datasets):
+        self.datasets = datasets
 
-start = time.time()
-print("start time: ", start)
+    def __getitem__(self, i):
+        return list(d[i] for d in self.datasets)
 
-f = "/GW/Health-Corpus/work/UMLS/data/data.csv"
-batches = DoubleSynonymsDataset(f)
-end = time.time()
-print("end time: ", end - start)
+    def __len__(self):
+        return min(len(d) for d in self.datasets)
+
+# start = time.time()
+# print("start time: ", start)
+
+# f = "/GW/Health-Corpus/work/UMLS/data/data.csv"
+# batches = DoubleSynonymsDataset(f)
+# end = time.time()
+# print("end time: ", end - start)

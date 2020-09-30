@@ -1,4 +1,4 @@
-max_lenght = 512
+max_length = 512
 train_batch_size = 8
 test_batch_size = 4
 epochs = 10

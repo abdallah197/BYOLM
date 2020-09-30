@@ -7,7 +7,6 @@ from torch.nn import CrossEntropyLoss
 
 import config_lm
 
-
 class ByolLanguegeModel(AlbertPreTrainedModel):
     """
     a Pytorch nn Module that incorporate BYOL approach for transformer based models.
@@ -37,7 +36,16 @@ class ByolLanguegeModel(AlbertPreTrainedModel):
 
     def get_output_embeddings(self):
         return self.predictions.decoder
-
+    
+    def batched_index_select(self ,input, dim, index):
+        for ii in range(1, len(input.shape)):
+            if ii != dim:
+                index = index.unsqueeze(ii)
+        expanse = list(input.shape)
+        expanse[0] = -1
+        expanse[dim] = -1
+        index = index.expand(expanse)
+        return torch.gather(input, dim, index)
     def forward(
         self,
         input_ids=None,
@@ -51,7 +59,7 @@ class ByolLanguegeModel(AlbertPreTrainedModel):
         output_hidden_states=None,
         masked_index = None,
         return_dict = None,
-        mlp = False
+        mlp = False,
         **kwargs
     ):
 
@@ -70,17 +78,18 @@ class ByolLanguegeModel(AlbertPreTrainedModel):
         prediction_scores = self.predictions(sequence_outputs)
 
 
-        # Add hidden states and attention if they are here
         output = (prediction_scores,) + outputs[2:]
-        # pass the masked tokens embeddings through the MLP layer
         """
         1: to access the hidden states
         0: to access the embedding output layer (batch_size, seq_length, hidden_size:768)
         masked_embeddings should be (batch_size, 768)
         """
         if mlp:
-            masked_embeddings = output[1][0][:,masked_index,:]
-            masked_embeddings = self.mlp(masked_embeddings)
+            masked_embeddings = output[1][0]
+            masked_index = masked_index.unsqueeze(1)
+            masked_embeddings = torch.cat([ torch.index_select(a, 0, i).unsqueeze(0) for a, i in zip(masked_embeddings, masked_index) ])
+            masked_embeddings = self.mlp(masked_embeddings.squeeze())
             return (masked_embeddings,) +  output[:]    
+            
         return output
 

@@ -7,6 +7,7 @@ from torch.nn import CrossEntropyLoss
 
 import config_lm
 
+
 class MLPHead(nn.Module):
     def __init__(self, in_channels, mlp_hidden_size, projection_size):
         super(MLPHead, self).__init__()
@@ -15,11 +16,12 @@ class MLPHead(nn.Module):
             nn.Linear(in_channels, mlp_hidden_size),
             nn.BatchNorm1d(mlp_hidden_size),
             nn.ReLU(inplace=True),
-            nn.Linear(mlp_hidden_size, projection_size)
+            nn.Linear(mlp_hidden_size, projection_size),
         )
 
     def forward(self, x):
         return self.net(x)
+
 
 class ByolLanguegeModel(AlbertPreTrainedModel):
     """
@@ -33,15 +35,16 @@ class ByolLanguegeModel(AlbertPreTrainedModel):
         self.albert = AlbertModel(config)
         self.cls = AlbertMLMHead(config)
         self.config = config
-        self.mlp = MLPHead(in_channels=config.hidden_size,
-                           mlp_hidden_size=config.hidden_size * 10,
-                           projection_size=config.hidden_size)
+        self.mlp = MLPHead(
+            in_channels=config.hidden_size,
+            mlp_hidden_size=config.hidden_size * 10,
+            projection_size=config.hidden_size,
+        )
 
         self.init_weights()
 
     def get_output_embeddings(self):
         return self.cls.decoder
-
 
     def batched_index_select(self, input, dim, index):
         for ii in range(1, len(input.shape)):
@@ -53,22 +56,21 @@ class ByolLanguegeModel(AlbertPreTrainedModel):
         index = index.expand(expanse)
         return torch.gather(input, dim, index)
 
-
     def forward(
-            self,
-            input_ids=None,
-            attention_mask=None,
-            token_type_ids=None,
-            position_ids=None,
-            masked_index=None,
+        self,
+        input_ids=None,
+        attention_mask=None,
+        token_type_ids=None,
+        position_ids=None,
+        masked_index=None,
     ):
         outputs = self.albert(
             input_ids=input_ids,
             return_dict=True,
-            attention_mask= attention_mask,
-            token_type_ids = token_type_ids,
-            position_ids = position_ids,
-            output_hidden_states = True
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            output_hidden_states=True,
         )
         sequence_outputs = outputs[0]
 
@@ -82,7 +84,16 @@ class ByolLanguegeModel(AlbertPreTrainedModel):
         masked_index = masked_index.unsqueeze(1)
 
         masked_embeddings = torch.cat(
-            [torch.index_select(a, 0, i).unsqueeze(0) for a, i in zip(masked_embeddings, masked_index)])
+            [
+                torch.index_select(a, 0, i).unsqueeze(0)
+                for a, i in zip(masked_embeddings, masked_index)
+            ]
+        )
 
         masked_embeddings = self.mlp(masked_embeddings.squeeze())
-        return (prediction_scores, masked_embeddings, outputs.hidden_states, outputs.attentions)
+        return (
+            prediction_scores,
+            masked_embeddings,
+            outputs.hidden_states,
+            outputs.attentions,
+        )

@@ -1,5 +1,5 @@
 from transformers import AutoModel, AlbertPreTrainedModel, AlbertModel
-from transformers.modeling_albert import AlbertMLMHead
+from transformers.models.albert.modeling_albert import AlbertMLMHead
 
 from torch import nn
 import torch.nn.functional as F

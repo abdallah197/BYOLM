@@ -20,14 +20,13 @@ from model import BYOLLM
 import config_lm
 
 
-
 class ByolLM:
     """
     main training class
     """
 
     def __init__(self, online_network, target_network, predictor, optimizer, device, max_epochs, m, batch_size,
-                 num_workers, checkpoint_interval, eval_during_training = False):
+                 num_workers, checkpoint_interval, eval_during_training=False):
 
         self.optimizer = optimizer
         self.device = device
@@ -40,6 +39,7 @@ class ByolLM:
         self.batch_size = batch_size,
         self.num_workers = num_workers,
         self.checkpoint_interval = checkpoint_interval
+        self.eval_during_training = eval_during_training
 
     def update_moving_average(self):
         """
@@ -69,7 +69,8 @@ class ByolLM:
 
     def train(self, dataset):
         # change the params to config
-        train_dataset, val_dataset = torch.utils.data.random_split(dataset, [int(len(dataset)*0.95), len(dataset) -int(len(dataset)*0.95)])
+        train_dataset, val_dataset = torch.utils.data.random_split(dataset, [int(len(dataset) * 0.95),
+                                                                             len(dataset) - int(len(dataset) * 0.95)])
         train_dataset = dataset
         train_loader = DataLoader(
             train_dataset,
@@ -85,16 +86,11 @@ class ByolLM:
         )
         model_checkpoints_folder = os.path.join(os.getcwd(), "checkpoints")
 
-
-
-
         self.initializes_target_network()
         # cahnge to config
         for niter, epoch_counter in enumerate(range(7)):
             epoch_training_loss = 0
             epoch_validation_loss = 0
-            # self.online_network.module.save_pretrained(os.path.join(model_checkpoints_folder, f'model_epoch_{epoch_counter}_{optim}_{lr}_eee.bin'))
-
             self.online_network.train()
             self.target_network.train()
             self.predictor.train()
@@ -116,12 +112,10 @@ class ByolLM:
                 loss.backward()
 
                 self.update_moving_average()
-                self.optimizer.step() # update the key encoder
+                self.optimizer.step()  # update the key encoder
                 wandb.log({'iteration_batch': iter_train, 'training_loss_batch': loss})
 
-
-
-            if eval_during_training:
+            if self.eval_during_training:
                 self.online_network.eval()
                 self.target_network.eval()
                 self.predictor.eval()
@@ -135,7 +129,7 @@ class ByolLM:
             wandb.log({'Epoch': epoch_counter, 'training_loss': epoch_training_loss})
             print(f"**** current training loss for epoch {epoch_counter} is: {epoch_training_loss} ****")
 
-            if eval_during_training:
+            if self.eval_during_training:
                 wandb.log({'iteration': niter, 'validation_loss': epoch_validation_loss})
                 print(f"**** current val loss for epoch {epoch_counter} is: {epoch_validation_loss} ****")
 
@@ -170,13 +164,13 @@ class ByolLM:
             input_ids=input_ids_view_1,
             masked_index=masked_indexes_view_1,
             output_hidden_states=True,
-        output_attentions=True)[1])
+            output_attentions=True)[1])
 
         predictions_from_view_2 = self.predictor(self.online_network(
             input_ids=input_ids_view_2,
             masked_index=masked_indexes_view_2,
             output_hidden_states=True,
-        output_attentions=True)[1])
+            output_attentions=True)[1])
 
         # compute key features
         with torch.no_grad():
@@ -184,14 +178,13 @@ class ByolLM:
                 input_ids=input_ids_view_1,
                 masked_index=masked_indexes_view_1,
                 output_hidden_states=True,
-            output_attentions=True)[1]
+                output_attentions=True)[1]
 
             targets_to_view_1 = self.target_network(
                 input_ids=input_ids_view_2,
                 masked_index=masked_indexes_view_2,
                 output_hidden_states=True,
-            output_attentions=True)[1]
-
+                output_attentions=True)[1]
 
         loss = self.boyl_loss(predictions_from_view_1, targets_to_view_1)
         loss += self.boyl_loss(predictions_from_view_2, targets_to_view_2)
@@ -214,7 +207,6 @@ class ByolLM:
         masked_indexes_view_2 = target_masks.to(device)
         # compute query feature
 
-
         # compute key features
         with torch.no_grad():
             predictions_from_view_1 = self.predictor(self.online_network(
@@ -233,13 +225,13 @@ class ByolLM:
                 input_ids=input_ids_view_1,
                 masked_index=masked_indexes_view_1,
                 output_hidden_states=True,
-            output_attentions=True)[1]
+                output_attentions=True)[1]
 
             targets_to_view_1 = self.target_network(
                 input_ids=input_ids_view_2,
                 masked_index=masked_indexes_view_2,
                 output_hidden_states=True,
-            output_attentions=True)[1]
+                output_attentions=True)[1]
 
         loss = self.boyl_loss(predictions_from_view_1, targets_to_view_1)
         loss += self.boyl_loss(predictions_from_view_2, targets_to_view_2)
@@ -252,4 +244,3 @@ class ByolLM:
             'target_network_state_dict': self.target_network.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
         }, PATH)
-
